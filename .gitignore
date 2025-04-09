@@ -172,3 +172,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# bottoken.txt
+credentials.json
+token.json
+bot-env
