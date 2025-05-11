@@ -10,11 +10,13 @@ import json
 
 import requests
 import time
+from datetime import datetime
 
 DEBUG = False
 
 # SLEEP_TIMER = 3600 # sleep for 1 hour
-SLEEP_TIMER = 300 # sleep for 15 mins
+SLEEP_TIMER = 900 # sleep for 15 mins
+SLOW_SLEEP_TIMER = 3600 # sleep for 1h
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
@@ -36,13 +38,13 @@ S_ELV_PLAYLIST_ID = "PLMv_MOdIUtdKNBx3u_V6UR4-JvG-oTlvE"
 S_RED_PLAYLIST_ID = "PLMv_MOdIUtdL5gaFEYlZg1lkGJMPUgHkf"
 S_KIRK_PLAYLIST_ID = "PLMv_MOdIUtdJd3PLSLoCng19CJTgVDPnt"
 S_AVL_PLAYLIST_ID = "PLMv_MOdIUtdLuA0ggNn7294qfH9D2VcLb"
-SCVC_PLAYLIST_ID = "PLMv_MOdIUtdKrvKlwZ0XYr2dcteU96iSv"
 SCVC_DRILLS_PLAYLIST_ID = "PLMv_MOdIUtdKRPtukJR5b3CNHxVrBUE3R"
 SOPD_PLAYLIST_ID = "PLMv_MOdIUtdIdZ6DG9r_lTIArhjMfWUdv"
 S_MISC_PLAYLIST_ID = "PLMv_MOdIUtdLJ4S0uSKL2napYRIsQZO99"
 
-SUBSCRIBED_PLAYLISTS = [S_AVL_PLAYLIST_ID, S_ELV_PLAYLIST_ID, S_RED_PLAYLIST_ID, S_KIRK_PLAYLIST_ID, SCVC_PLAYLIST_ID, SCVC_DRILLS_PLAYLIST_ID, SOPD_PLAYLIST_ID, S_MISC_PLAYLIST_ID]
-# SUBSCRIBED_PLAYLISTS = [SOPD_PLAYLIST_ID]
+SUBSCRIBED_PLAYLISTS = [S_AVL_PLAYLIST_ID, S_ELV_PLAYLIST_ID, S_RED_PLAYLIST_ID, S_KIRK_PLAYLIST_ID, SCVC_DRILLS_PLAYLIST_ID, SOPD_PLAYLIST_ID, S_MISC_PLAYLIST_ID]
+if DEBUG:
+    SUBSCRIBED_PLAYLISTS = [S_RED_PLAYLIST_ID]
 
 # Other playlists
 W_RED_TEMP_PLAYLIST_ID = "PLMv_MOdIUtdLrxxk87uogylhGKfhXfALQ"
@@ -50,6 +52,8 @@ LA_FITNESS_PLAYLIST_ID = "PLMv_MOdIUtdKV93qAzEzb36EXUxTF5mYt"
 W_MISC_PLAYLIST_ID = "PLMv_MOdIUtdITcGzYTfaglXtYCMDAw9IU"
 W_KIRK_PLAYLIST_ID = "PLMv_MOdIUtdIX1tQTwX03JSIc-5qPRhBc"
 W_AVL_PLAYLIST_ID = "PLMv_MOdIUtdKvle61fhLGDO38kbdgc39t"
+SCVC_PLAYLIST_ID = "PLMv_MOdIUtdKrvKlwZ0XYr2dcteU96iSv"
+TOURNEY_PLAYLIST_ID = "PLMv_MOdIUtdKOuhVpj4yyBl4XHPX-T0if"
 
 DATA_FOLDER = "data"
 DATA_FILE = f"{DATA_FOLDER}/data.json"
@@ -139,8 +143,10 @@ class Youtube:
             playlistId=playlistId
         )
         response = request.execute()
+        time.sleep(2)
         numResults = response["pageInfo"]["totalResults"]
-        # print(response)
+        if DEBUG:
+            print(response)
         
         videos= {}
         for video in response["items"]:
@@ -157,11 +163,12 @@ class Youtube:
                 pageToken=response["nextPageToken"]
                 )
             response = request.execute()
+            time.sleep(2)
             for video in response["items"]:
                 videos[video["id"]] = {"title": video["snippet"]["title"],
                                        "videoId": video["contentDetails"]["videoId"],
                                        "playlistId": playlistId,
-                                       "uploaded": True if video["snippet"]["thumbnails"].get("maxres") else False}
+                                       "uploaded": True if video["snippet"]["thumbnails"].get("standard") else False}
             # print(response)
         return numResults, videos
 
@@ -235,14 +242,28 @@ def postNewPlaylistToDiscord(playlistId):
 
 youtube = Youtube()
 oldData = loadData()
-# oldData = loadTestData()
+if DEBUG:
+    oldData = loadTestData()
+# time.sleep(3600*8)
+outOfDate = False
 while True:
 # if True:
+
+
+    # Get the current date and time
+    now = datetime.now()
+
+    # Print the current date and time
+    print(f"[{now}]")
     updated = False
+    allUploaded = True
     newData = {}
     for playlistId in SUBSCRIBED_PLAYLISTS:
         numVideos, videos = youtube.fetchPlaylist(playlistId)
         newData[playlistId] = {"count":numVideos, "videos":videos}
+    
+    if DEBUG:
+        break
     
     # saveData(newData)
     for playlistId in SUBSCRIBED_PLAYLISTS:
@@ -273,19 +294,25 @@ while True:
             if videosUploading != []:
                 # videos are still uploading
                 print(playlistId, f"{len(videosUploading)} video(s) are still uploading...\t{len(newVideos)} video(s) ready to report...")
+                allUploaded = False
                 continue
             
             if newVideos != []:
                 print(playlistId, f"{len(newVideos)} videos to update")
                 postUpdateToDiscord(newVideos)
                 updated = True
+                outOfDate = True
             else:
                 print(playlistId, "No videos to update")
     
     if updated:
+        oldData = newData
+        
+    if outOfDate and allUploaded:
         saveData(newData)
         oldData = loadData()
-        updated = False
+        outOfDate = False
 
-    print(f"sleeping for {SLEEP_TIMER} seconds...\n")
-    time.sleep(SLEEP_TIMER)
+    timer = SLEEP_TIMER if not allUploaded else SLOW_SLEEP_TIMER
+    print(f"sleeping for {timer} seconds...\n")
+    time.sleep(timer)
